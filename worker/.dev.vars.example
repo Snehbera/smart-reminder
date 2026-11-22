@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local `wrangler dev` (never commit .dev.vars)
+# Generate keys with:  npm run vapid
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:you@example.com

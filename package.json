@@ -1,0 +1,17 @@
+{
+  "name": "smart-reminder",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Smart Reminder Service — React + Cloudflare Workers + D1, delivered via Web Push",
+  "scripts": {
+    "install:all": "npm --prefix worker install && npm --prefix frontend install",
+    "vapid": "npm --prefix worker run vapid",
+    "test": "npm --prefix worker test",
+    "dev:worker": "npm --prefix worker run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "db:local": "npm --prefix worker run db:local",
+    "db:remote": "npm --prefix worker run db:remote",
+    "deploy:worker": "npm --prefix worker run deploy",
+    "deploy:frontend": "npm --prefix frontend run deploy"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smart-reminder-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+
+  // Runs scheduled() every minute — this is what delivers reminders even when no browser tab is open.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "smart-reminder-db",
+      // Replace with the id printed by:  npx wrangler d1 create smart-reminder-db
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+
+  "vars": {
+    // Must be a real mailto: or https: URL — Apple/Mozilla push services reject invalid VAPID subjects.
+    "VAPID_SUBJECT": "mailto:berasneh645@gmail.com",
+    // CORS allow-list for the browser app. Use "*" while testing, then set your Pages URL(s),
+    // comma separated, e.g. "https://smart-reminder.pages.dev,https://reminders.example.com"
+    "ALLOWED_ORIGIN": "*",
+    // Optional: extra push-service hostnames to allow (comma separated). Defaults cover Chrome/Edge/Firefox/Safari.
+    "EXTRA_PUSH_HOSTS": ""
+  },
+
+  "observability": {
+    "enabled": true
+  }
+
+  // Secrets (set with `wrangler secret put`, never commit):
+  //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+}
