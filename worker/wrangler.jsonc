@@ -14,7 +14,7 @@
       "binding": "DB",
       "database_name": "smart-reminder-db",
       // Replace with the id printed by:  npx wrangler d1 create smart-reminder-db
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "358669e1-3b7a-49ce-b38d-ad64460b4acd"
     }
   ],
 
