@@ -54,18 +54,18 @@ export function CompletedPage({
       {/* Search Bar */}
       {reminders.some((r) => r.status === 'completed') && (
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           <input
             type="text"
             placeholder="Search completed reminders..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input pl-9 pr-8 text-xs sm:text-sm py-2"
+            className="input pl-10 pr-9 text-xs sm:text-sm !py-2.5"
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
             >
               <X className="h-4 w-4" />
             </button>

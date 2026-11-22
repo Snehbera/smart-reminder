@@ -6,6 +6,9 @@
   html {
     -webkit-tap-highlight-color: transparent;
   }
+  html.dark {
+    color-scheme: dark;
+  }
   body {
     @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
   }
@@ -17,6 +20,16 @@
   }
   :focus-visible {
     @apply outline-none ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950;
+  }
+
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark textarea:-webkit-autofill,
+  .dark select:-webkit-autofill {
+    -webkit-text-fill-color: #f1f5f9;
+    -webkit-box-shadow: 0 0 0px 1000px #1e293b inset;
+    transition: background-color 5000s ease-in-out 0s;
   }
 }
 
@@ -33,10 +46,12 @@
   .card {
     @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
   }
-  .field {
+  .field,
+  .input {
     @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400
-      transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30
-      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500;
+      transition duration-150 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/25
+      dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-100 dark:placeholder-slate-500
+      dark:focus:border-indigo-400 dark:focus:ring-2 dark:focus:ring-indigo-500/40 dark:focus:bg-slate-800;
   }
   .btn {
     @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition

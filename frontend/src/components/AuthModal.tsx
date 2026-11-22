@@ -116,57 +116,57 @@ export function AuthModal({ isOpen, onClose, onSuccess }: Props) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
             <div>
-              <label className="block mb-1 text-xs font-medium text-slate-700 dark:text-slate-300">
+              <label className="block mb-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Full Name (optional)
               </label>
               <div className="relative">
-                <UserIcon className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <UserIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="John Doe"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="input pl-9"
+                  className="input pl-10"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block mb-1 text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label className="block mb-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="email"
                 required
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="input pl-9"
+                className="input pl-10"
               />
             </div>
           </div>
 
           <div>
-            <label className="block mb-1 text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label className="block mb-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
               Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="input pl-9 pr-9"
+                className="input pl-10 pr-10"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>

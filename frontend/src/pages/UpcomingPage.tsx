@@ -126,7 +126,7 @@ export function UpcomingPage({
         {/* Search Input Row with Reset */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Search reminders..."
@@ -137,7 +137,7 @@ export function UpcomingPage({
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 aria-label="Clear search"
               >
                 <X className="h-4 w-4" />
@@ -174,12 +174,12 @@ export function UpcomingPage({
               onClick={() => setCategoryFilter('all')}
               className={`rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 shrink-0 ${
                 categoryFilter === 'all'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                  ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-500/30'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
               }`}
             >
               <span>All</span>
-              <span className="opacity-60 text-[10px]">({categoryCounts.all ?? 0})</span>
+              <span className="opacity-70 text-[10px]">({categoryCounts.all ?? 0})</span>
             </button>
 
             {/* Individual Visual Category Pills */}
