@@ -2,6 +2,20 @@ export type RepeatInterval = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type ReminderStatus = 'pending' | 'sent' | 'snoozed' | 'completed';
 export type CategoryName = 'Personal' | 'Work' | 'Bills' | 'Health' | 'Important';
 
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+export interface AuthResponse {
+  ok: boolean;
+  user: User;
+  token: string;
+}
+
+export type FrequencyFilter = 'all' | 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
 export interface Reminder {
   id: string;
   title: string;

@@ -95,3 +95,18 @@ export async function getSubscriptionsForDevice(db: D1Database, deviceId: string
     .all<SubscriptionRow>();
   return results ?? [];
 }
+
+export async function getSubscriptionsForUserOrDevice(
+  db: D1Database,
+  userId: string | null | undefined,
+  deviceId: string,
+): Promise<SubscriptionRow[]> {
+  if (userId) {
+    const { results } = await db
+      .prepare('SELECT * FROM subscriptions WHERE user_id = ?1 OR device_id = ?2')
+      .bind(userId, deviceId)
+      .all<SubscriptionRow>();
+    return results ?? [];
+  }
+  return getSubscriptionsForDevice(db, deviceId);
+}

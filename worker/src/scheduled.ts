@@ -55,11 +55,11 @@ export async function runScheduled(env: Env, scheduledTime: number): Promise<voi
   ].slice(0, MAX_PER_TICK);
 
   if (jobs.length) {
-    const subsByDevice = await loadSubscriptions(env.DB, [...new Set(jobs.map((j) => j.row.device_id))]);
+    const subsByReminder = await loadSubscriptionsForJobs(env.DB, jobs);
     for (let i = 0; i < jobs.length; i += CONCURRENCY) {
       await Promise.all(
         jobs.slice(i, i + CONCURRENCY).map((job) =>
-          processJob(env, job, subsByDevice.get(job.row.device_id) ?? [], now).catch((err) =>
+          processJob(env, job, subsByReminder.get(job.row.id) ?? [], now).catch((err) =>
             console.error('job failed', job.kind, job.row.id, String(err)),
           ),
         ),
@@ -77,8 +77,29 @@ export async function runScheduled(env: Env, scheduledTime: number): Promise<voi
   }
 }
 
-async function loadSubscriptions(db: D1Database, deviceIds: string[]): Promise<Map<string, SubscriptionRow[]>> {
+async function loadSubscriptionsForJobs(db: D1Database, jobs: Job[]): Promise<Map<string, SubscriptionRow[]>> {
   const map = new Map<string, SubscriptionRow[]>();
+  const userIds = [...new Set(jobs.map((j) => j.row.user_id).filter((id): id is string => Boolean(id)))];
+  const deviceIds = [...new Set(jobs.map((j) => j.row.device_id).filter(Boolean))];
+
+  const userSubs = new Map<string, SubscriptionRow[]>();
+  for (let i = 0; i < userIds.length; i += 50) {
+    const chunk = userIds.slice(i, i + 50);
+    const placeholders = chunk.map((_, idx) => `?${idx + 1}`).join(',');
+    const { results } = await db
+      .prepare(`SELECT * FROM subscriptions WHERE user_id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<SubscriptionRow>();
+    for (const s of results ?? []) {
+      if (s.user_id) {
+        const list = userSubs.get(s.user_id) ?? [];
+        list.push(s);
+        userSubs.set(s.user_id, list);
+      }
+    }
+  }
+
+  const deviceSubs = new Map<string, SubscriptionRow[]>();
   for (let i = 0; i < deviceIds.length; i += 50) {
     const chunk = deviceIds.slice(i, i + 50);
     const placeholders = chunk.map((_, idx) => `?${idx + 1}`).join(',');
@@ -87,11 +108,28 @@ async function loadSubscriptions(db: D1Database, deviceIds: string[]): Promise<M
       .bind(...chunk)
       .all<SubscriptionRow>();
     for (const s of results ?? []) {
-      const list = map.get(s.device_id) ?? [];
+      const list = deviceSubs.get(s.device_id) ?? [];
       list.push(s);
-      map.set(s.device_id, list);
+      deviceSubs.set(s.device_id, list);
     }
   }
+
+  for (const job of jobs) {
+    let subs: SubscriptionRow[] = [];
+    if (job.row.user_id && userSubs.has(job.row.user_id)) {
+      subs = [...(userSubs.get(job.row.user_id) ?? [])];
+    }
+    const dSubs = deviceSubs.get(job.row.device_id) ?? [];
+    const endpoints = new Set(subs.map((s) => s.endpoint));
+    for (const ds of dSubs) {
+      if (!endpoints.has(ds.endpoint)) {
+        subs.push(ds);
+        endpoints.add(ds.endpoint);
+      }
+    }
+    map.set(job.row.id, subs);
+  }
+
   return map;
 }
 

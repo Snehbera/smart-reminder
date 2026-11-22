@@ -8,9 +8,30 @@
 -- (Do NOT compare against SQLite's datetime('now'): it returns 'YYYY-MM-DD HH:MM:SS' with a
 -- space instead of 'T', which breaks string comparison against ISO values.)
 
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  salt          TEXT NOT NULL,
+  name          TEXT,
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token       TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
   id          TEXT PRIMARY KEY,
   device_id   TEXT NOT NULL,
+  user_id     TEXT,
   email       TEXT,                                   -- optional, reserved for fallback alerts
   endpoint    TEXT NOT NULL UNIQUE,
   p256dh      TEXT NOT NULL,
@@ -21,10 +42,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_device ON subscriptions (device_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user   ON subscriptions (user_id);
 
 CREATE TABLE IF NOT EXISTS reminders (
   id               TEXT PRIMARY KEY,
   device_id        TEXT NOT NULL,
+  user_id          TEXT,                              -- optional, linked when user is authenticated
   title            TEXT NOT NULL,
   notes            TEXT,
   category         TEXT NOT NULL DEFAULT 'General',
@@ -50,3 +73,4 @@ CREATE INDEX IF NOT EXISTS idx_reminders_snoozed  ON reminders (status, snoozed_
 CREATE INDEX IF NOT EXISTS idx_reminders_nag      ON reminders (status, nag_mode, last_sent_at);
 -- Dashboard listing
 CREATE INDEX IF NOT EXISTS idx_reminders_device   ON reminders (device_id, remind_at_utc);
+CREATE INDEX IF NOT EXISTS idx_reminders_user     ON reminders (user_id, remind_at_utc);

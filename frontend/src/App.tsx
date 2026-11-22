@@ -1,12 +1,24 @@
-import { AlarmClockPlus, AlertTriangle, BellRing, Moon, RefreshCw, Sun } from 'lucide-react';
+import {
+  AlertTriangle,
+  BellRing,
+  CheckCircle2,
+  LogIn,
+  LogOut,
+  Moon,
+  Plus,
+  RefreshCw,
+  Sun,
+  User as UserIcon,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuthModal } from './components/AuthModal';
 import { PermissionBanner } from './components/PermissionBanner';
 import type { CardAction } from './components/ReminderCard';
-import { ReminderForm } from './components/ReminderForm';
 import { ReminderList, tabOf, type Tab } from './components/ReminderList';
+import { ReminderModal } from './components/ReminderModal';
 import { Toasts, type Toast } from './components/Toasts';
 import { useTheme } from './hooks/useTheme';
-import { ApiError, api } from './lib/api';
+import { ApiError, api, getStoredUser } from './lib/api';
 import {
   enableNotifications,
   initialPushState,
@@ -16,7 +28,7 @@ import {
   type PushState,
 } from './lib/push';
 import { formatDateTime } from './lib/time';
-import type { Reminder, ReminderInput } from './lib/types';
+import type { Reminder, ReminderInput, User } from './lib/types';
 
 const POLL_MS = 60_000;
 
@@ -26,9 +38,17 @@ export default function App() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('upcoming');
+  const [tab, setTab] = useState<Tab>('all');
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, CardAction | undefined>>({});
+
+  // Auth state
+  const [user, setUser] = useState<User | null>(() => getStoredUser());
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // Reminder Modal state
+  const [reminderModalOpen, setReminderModalOpen] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
 
   const [pushState, setPushState] = useState<PushState>('loading');
   const [pushBusy, setPushBusy] = useState(false);
@@ -47,6 +67,16 @@ export default function App() {
     [dismissToast],
   );
   const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
+
+  // ---- Check current authenticated user on mount ---------------------------
+  useEffect(() => {
+    api
+      .getMe()
+      .then((u) => setUser(u))
+      .catch(() => {
+        // Not authenticated with valid session, keep guest or null
+      });
+  }, []);
 
   // ---- data ---------------------------------------------------------------
   const refresh = useCallback(async (showError = false) => {
@@ -67,7 +97,6 @@ export default function App() {
   }, [refresh]);
 
   // Auto-sync: tab becomes visible again / window focused / network back / every minute while visible.
-  // This is what makes "Mark Done" taken from the OS notification show up here immediately.
   useEffect(() => {
     const sync = () => {
       if (document.visibilityState === 'visible') void refresh();
@@ -150,7 +179,6 @@ export default function App() {
     if (initial === 'connecting') void connect();
     else if (initial === 'default' && pushSupported()) void registerServiceWorker().catch(() => undefined);
 
-    // React to the user changing the permission in browser settings while the page is open.
     let status: PermissionStatus | null = null;
     const onChange = () => {
       const next = initialPushState();
@@ -191,7 +219,6 @@ export default function App() {
       try {
         result = await api.testPush();
       } catch (e) {
-        // The server has no subscription for this browser (e.g. it was purged): re-register once and retry.
         if (e instanceof ApiError && e.status === 409) {
           await subscribeAndSync();
           result = await api.testPush();
@@ -210,7 +237,6 @@ export default function App() {
   const handleCreate = async (input: ReminderInput) => {
     const created = await api.create(input);
     setReminders((list) => [...list, created]);
-    setTab('upcoming');
     const when = formatDateTime(new Date(created.remindAt));
     toast(
       pushState === 'active'
@@ -254,7 +280,6 @@ export default function App() {
           break;
         case 'restore':
           replace(await api.reopen(r.id, 10));
-          setTab('upcoming');
           toast('Restored — it will alert in 10 minutes.');
           break;
         case 'delete':
@@ -271,29 +296,96 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    await api.logout();
+    setUser(null);
+    toast('Logged out successfully.');
+    void refresh();
+  };
+
   // ---- render ---------------------------------------------------------------
   return (
-    <div className="mx-auto min-h-screen max-w-3xl space-y-5 px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
-            <BellRing className="h-5 w-5" />
+    <div className="mx-auto min-h-screen max-w-4xl space-y-5 px-3 sm:px-6 pb-28 pt-4 sm:pt-8">
+      {/* Top Navigation Bar */}
+      <header className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800/80">
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/20">
+              <BellRing className="h-5 w-5 sm:h-6 sm:w-6" />
+            </div>
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                Smart Reminders
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Persistent push alerts across your devices
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold leading-tight tracking-tight">Smart Reminders</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Alerts that find you, even when this tab is closed</p>
+
+          {/* Mobile Theme Toggle */}
+          <div className="flex sm:hidden items-center gap-1.5">
+            <button
+              onClick={toggle}
+              className="btn-ghost h-9 w-9 !p-0"
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
           </div>
         </div>
-        <button
-          onClick={toggle}
-          className="btn-ghost h-10 w-10 !p-0"
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
+
+        {/* Header Right Actions */}
+        <div className="flex items-center justify-end gap-2 flex-wrap sm:flex-nowrap">
+          {/* User Account / Profile */}
+          {user ? (
+            <div className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 p-1 pl-2.5 text-xs">
+              <div className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] sm:max-w-[200px]">
+                <UserIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                <span className="truncate">{user.name || user.email}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="btn-ghost !p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                title="Log out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAuthModalOpen(true)}
+              className="btn-secondary !py-2 !px-3 text-xs flex items-center gap-1.5 font-semibold"
+            >
+              <LogIn className="h-3.5 w-3.5 text-indigo-500" />
+              <span>Sign In / Register</span>
+            </button>
+          )}
+
+          {/* Desktop Theme Toggle */}
+          <button
+            onClick={toggle}
+            className="btn-ghost hidden sm:flex h-9 w-9 !p-0"
+            aria-label={theme === 'dark' ? 'Light theme' : 'Dark theme'}
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+
+          {/* Primary "+ Add Reminder" Button */}
+          <button
+            onClick={() => {
+              setEditingReminder(null);
+              setReminderModalOpen(true);
+            }}
+            className="btn-primary !py-2 !px-3.5 text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/20"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            <span>Add Reminder</span>
+          </button>
+        </div>
       </header>
 
+      {/* Web Push Permission Banner */}
       <PermissionBanner
         state={pushState}
         busy={pushBusy}
@@ -305,13 +397,7 @@ export default function App() {
         onTest={handleTest}
       />
 
-      <section className="card p-4 sm:p-5" aria-label="Create a reminder">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          <AlarmClockPlus className="h-4 w-4" /> New reminder
-        </h2>
-        <ReminderForm submitLabel="Add reminder" onSubmit={handleCreate} />
-      </section>
-
+      {/* Error state alert */}
       {loadError && (
         <div
           role="alert"
@@ -326,6 +412,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Main Reminders View with Separated Sections & Frequency Filters */}
       <ReminderList
         reminders={reminders}
         loading={loading}
@@ -335,12 +422,80 @@ export default function App() {
         busy={busy}
         onAction={handleAction}
         onSaveEdit={handleSaveEdit}
+        onOpenAddModal={() => {
+          setEditingReminder(null);
+          setReminderModalOpen(true);
+        }}
+        onEditInModal={(r) => {
+          setEditingReminder(r);
+          setReminderModalOpen(true);
+        }}
       />
 
-      <footer className="pt-4 text-center text-xs text-slate-400 dark:text-slate-500">
-        Your reminders are tied to this browser (no account needed). Clearing site data creates a new, empty identity.
+      {/* Footer */}
+      <footer className="pt-6 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1">
+        {user ? (
+          <p className="flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            Reminders and alerts are synced to your account ({user.email}).
+          </p>
+        ) : (
+          <p>
+            Reminders are saved to this browser.
+            <button
+              onClick={() => setAuthModalOpen(true)}
+              className="ml-1 text-indigo-600 hover:underline dark:text-indigo-400 font-medium"
+            >
+              Sign in or create an account
+            </button>{' '}
+            to sync across multiple devices.
+          </p>
+        )}
       </footer>
 
+      {/* Mobile Floating Action Button (FAB) */}
+      <div className="fixed bottom-6 right-5 sm:hidden z-30">
+        <button
+          onClick={() => {
+            setEditingReminder(null);
+            setReminderModalOpen(true);
+          }}
+          className="flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-600/30 active:scale-95 transition"
+        >
+          <Plus className="h-5 w-5" />
+          <span>New Reminder</span>
+        </button>
+      </div>
+
+      {/* Add / Edit Reminder Modal */}
+      <ReminderModal
+        isOpen={reminderModalOpen}
+        initial={editingReminder || undefined}
+        onClose={() => {
+          setReminderModalOpen(false);
+          setEditingReminder(null);
+        }}
+        onSubmit={async (input, timeChanged) => {
+          if (editingReminder) {
+            await handleSaveEdit(editingReminder, input, timeChanged);
+          } else {
+            await handleCreate(input);
+          }
+        }}
+      />
+
+      {/* Login & Registration Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onSuccess={(u) => {
+          setUser(u);
+          void refresh();
+          toast(`Welcome back, ${u.name || u.email}! Your reminders are now synced.`);
+        }}
+      />
+
+      {/* Floating notification toasts */}
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

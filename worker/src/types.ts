@@ -24,6 +24,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
 export interface ReminderRow {
   id: string;
   device_id: string;
+  user_id?: string | null;
   title: string;
   notes: string | null;
   category: string;
@@ -44,6 +45,7 @@ export interface ReminderRow {
 export interface SubscriptionRow {
   id: string;
   device_id: string;
+  user_id?: string | null;
   email: string | null;
   endpoint: string;
   p256dh: string;
@@ -51,6 +53,23 @@ export interface SubscriptionRow {
   user_agent: string | null;
   created_at: string;
   updated_at: string | null;
+}
+
+export interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  salt: string;
+  name: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SessionRow {
+  token: string;
+  user_id: string;
+  expires_at: string;
+  created_at: string;
 }
 
 /** JSON sent (encrypted) to the service worker. */
