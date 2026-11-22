@@ -1,3 +1,4 @@
+import { buildReminderEmailHtml, sendEmail } from './email.ts';
 import { buildReminderPayload, deliver } from './notify.ts';
 import { nextOccurrence } from './recurrence.ts';
 import type { Env, ReminderRow, ReminderStatus, SubscriptionRow } from './types.ts';
@@ -68,6 +69,36 @@ export async function runScheduled(env: Env, scheduledTime: number): Promise<voi
     console.log(`cron ${new Date(scheduledTime).toISOString()}: processed ${jobs.length} reminder(s)`);
   }
 
+  // Early email alerts (e.g. 5m, 15m, 1h before scheduled time)
+  try {
+    const earlyReminders = await env.DB.prepare(
+      `SELECT * FROM reminders
+        WHERE status = 'pending'
+          AND (channel = 'email' OR channel = 'both')
+          AND email_offset_minutes > 0
+          AND email_sent_at IS NULL
+          AND datetime(remind_at_utc, '-' || email_offset_minutes || ' minutes') <= ?1
+        LIMIT 20`,
+    )
+      .bind(nowIso)
+      .all<ReminderRow>();
+
+    for (const row of earlyReminders.results ?? []) {
+      const targetEmail = await resolveEmail(env.DB, row);
+      if (targetEmail) {
+        const { subject, html } = buildReminderEmailHtml(row, 'early', row.email_offset_minutes);
+        const res = await sendEmail(env, { to: targetEmail, subject, html });
+        if (res.ok && !res.mock) {
+          await env.DB.prepare('UPDATE reminders SET email_sent_at = ?1 WHERE id = ?2')
+            .bind(nowIso, row.id)
+            .run();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to process early email alerts', err);
+  }
+
   // Hourly housekeeping
   if (new Date(scheduledTime).getUTCMinutes() === 0) {
     const cutoff = new Date(now - COMPLETED_RETENTION_DAYS * 86_400_000).toISOString();
@@ -133,11 +164,35 @@ async function loadSubscriptionsForJobs(db: D1Database, jobs: Job[]): Promise<Ma
   return map;
 }
 
+async function resolveEmail(db: D1Database, row: ReminderRow): Promise<string | null> {
+  if (row.email && row.email.includes('@')) return row.email.trim();
+  if (row.user_id) {
+    const user = await db.prepare('SELECT email FROM users WHERE id = ?1').bind(row.user_id).first<{ email: string }>();
+    if (user?.email) return user.email;
+  }
+  return null;
+}
+
+async function maybeSendEmailAlert(env: Env, row: ReminderRow, kind: FireKind): Promise<void> {
+  const targetEmail = await resolveEmail(env.DB, row);
+  if (!targetEmail) return;
+
+  const emailType = kind === 'nag' ? 'overdue' : 'due';
+  const { subject, html } = buildReminderEmailHtml(row, emailType);
+  const res = await sendEmail(env, { to: targetEmail, subject, html });
+  if (res.ok && !res.mock) {
+    await env.DB.prepare('UPDATE reminders SET email_sent_at = ?1 WHERE id = ?2')
+      .bind(new Date().toISOString(), row.id)
+      .run();
+  }
+}
+
 async function processJob(env: Env, { kind, row }: Job, subs: SubscriptionRow[], now: number): Promise<void> {
   const nowIso = new Date(now).toISOString();
   let delivered = 0;
 
-  if (subs.length) {
+  const sendPush = row.channel !== 'email';
+  if (sendPush && subs.length) {
     const summary = await deliver(env, subs, buildReminderPayload(row));
     delivered = summary.delivered;
 
@@ -147,7 +202,14 @@ async function processJob(env: Env, { kind, row }: Job, subs: SubscriptionRow[],
       return;
     }
   }
-  // No subscriptions (or all expired / permanently failing): don't retry forever — move on as "sent".
+
+  // Send email alert if enabled for this reminder (due or nag/overdue)
+  const sendEmailAlert = row.channel === 'email' || row.channel === 'both';
+  if (sendEmailAlert) {
+    await maybeSendEmailAlert(env, row, kind).catch((err) =>
+      console.error('Failed to send reminder email', row.id, err),
+    );
+  }
 
   const next = transition(row, kind, now);
   const guard = guardClause(kind);

@@ -16,6 +16,7 @@ export interface AuthResponse {
 }
 
 export type FrequencyFilter = 'all' | 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type AlertChannel = 'push' | 'email' | 'both';
 
 export interface Reminder {
   id: string;
@@ -29,6 +30,10 @@ export interface Reminder {
   status: ReminderStatus;
   nagMode: boolean;
   badgeColor: string;
+  channel?: AlertChannel;
+  email?: string | null;
+  emailOffsetMinutes?: number;
+  emailSentAt?: string | null;
   /** When status === 'snoozed': when the re-alert fires (ISO, UTC). */
   snoozedUntil: string | null;
   lastSentAt: string | null;
@@ -44,6 +49,9 @@ export interface ReminderInput {
   repeatInterval: RepeatInterval;
   nagMode: boolean;
   badgeColor: string;
+  channel?: AlertChannel;
+  email?: string | null;
+  emailOffsetMinutes?: number;
 }
 
 export const CATEGORIES: { name: CategoryName; color: string }[] = [

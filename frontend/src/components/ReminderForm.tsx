@@ -1,9 +1,11 @@
-import { AlarmClockPlus, BellRing, Loader2, Repeat } from 'lucide-react';
+import { AlarmClockPlus, Bell, BellRing, Clock, Loader2, Mail, Repeat } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
+import { getStoredUser } from '../lib/api';
 import {
   CATEGORIES,
   REPEAT_OPTIONS,
   categoryColor,
+  type AlertChannel,
   type CategoryName,
   type Reminder,
   type ReminderInput,
@@ -41,6 +43,9 @@ export function ReminderForm({ initial, submitLabel, onSubmit, onCancel }: Props
   const [category, setCategory] = useState<CategoryName>(isCategory(initial?.category) ? initial!.category as CategoryName : 'Personal');
   const [repeat, setRepeat] = useState<RepeatInterval>(initial?.repeatInterval ?? 'none');
   const [nag, setNag] = useState(initial?.nagMode ?? false);
+  const [channel, setChannel] = useState<AlertChannel>(initial?.channel ?? 'both');
+  const [email, setEmail] = useState(initial?.email ?? getStoredUser()?.email ?? '');
+  const [emailOffsetMinutes, setEmailOffsetMinutes] = useState(initial?.emailOffsetMinutes ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +60,10 @@ export function ReminderForm({ initial, submitLabel, onSubmit, onCancel }: Props
     const timeChanged = !initial || when !== initialWhen;
     if (timeChanged && new Date(iso).getTime() < Date.now() - 60_000) return setError('Pick a time in the future.');
 
+    if ((channel === 'email' || channel === 'both') && !email.trim()) {
+      return setError('Please enter an email address for email alerts.');
+    }
+
     setSaving(true);
     try {
       await onSubmit(
@@ -67,6 +76,9 @@ export function ReminderForm({ initial, submitLabel, onSubmit, onCancel }: Props
           repeatInterval: repeat,
           nagMode: nag,
           badgeColor: categoryColor(category),
+          channel,
+          email: channel !== 'push' ? email.trim() : null,
+          emailOffsetMinutes: channel !== 'push' ? emailOffsetMinutes : 0,
         },
         timeChanged,
       );
@@ -76,6 +88,8 @@ export function ReminderForm({ initial, submitLabel, onSubmit, onCancel }: Props
         setWhen(toLocalInputValue(presets.inMinutes(60)));
         setRepeat('none');
         setNag(false);
+        setChannel('both');
+        setEmailOffsetMinutes(0);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -204,6 +218,104 @@ export function ReminderForm({ initial, submitLabel, onSubmit, onCancel }: Props
             </span>
           </button>
         </div>
+      </div>
+
+      {/* Alert Channels & Email Timing */}
+      <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
+        <div>
+          <span className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <Bell className="h-3.5 w-3.5 text-indigo-500" /> Alert Delivery Channel
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setChannel('push')}
+              className={`rounded-xl border py-2 px-2 text-xs font-semibold transition flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
+                channel === 'push'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-indigo-500/30'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              }`}
+            >
+              <Bell className="h-3.5 w-3.5" />
+              <span>Push Only</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setChannel('email')}
+              className={`rounded-xl border py-2 px-2 text-xs font-semibold transition flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
+                channel === 'email'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-indigo-500/30'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              }`}
+            >
+              <Mail className="h-3.5 w-3.5" />
+              <span>Email Only</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setChannel('both')}
+              className={`rounded-xl border py-2 px-2 text-xs font-semibold transition flex flex-col sm:flex-row items-center justify-center gap-1.5 ${
+                channel === 'both'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-indigo-500/30'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              }`}
+            >
+              <span className="flex items-center gap-0.5">
+                <Bell className="h-3.5 w-3.5" />
+                <span className="text-[10px] opacity-60">+</span>
+                <Mail className="h-3.5 w-3.5" />
+              </span>
+              <span>Push & Email</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Email options when email or both is chosen */}
+        {channel !== 'push' && (
+          <div className="space-y-3 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+            <div>
+              <label htmlFor="rem-email" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                Send Email Alert To
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                <input
+                  id="rem-email"
+                  type="email"
+                  required
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input pl-10 text-xs sm:text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="rem-email-offset" className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+                <Clock className="h-3 w-3" /> Customized Email Alert Timing
+              </label>
+              <select
+                id="rem-email-offset"
+                value={emailOffsetMinutes}
+                onChange={(e) => setEmailOffsetMinutes(parseInt(e.target.value, 10))}
+                className="input text-xs sm:text-sm"
+              >
+                <option value={0}>At scheduled time (0 min)</option>
+                <option value={5}>5 minutes before</option>
+                <option value={15}>15 minutes before</option>
+                <option value={30}>30 minutes before</option>
+                <option value={60}>1 hour before</option>
+                <option value={1440}>1 day before</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                If push notification is dismissed or due/overdue, an email alert will also be dispatched.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (

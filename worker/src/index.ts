@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
+import { buildReminderEmailHtml, sendEmail } from './email.ts';
 import {
   buildGenericTestPayload,
   buildReminderPayload,
@@ -237,6 +238,10 @@ function serializeReminder(r: ReminderRow) {
     status: r.status,
     nagMode: r.nag_mode === 1,
     badgeColor: r.badge_color,
+    channel: r.channel || 'both',
+    email: r.email || null,
+    emailOffsetMinutes: r.email_offset_minutes ?? 0,
+    emailSentAt: r.email_sent_at || null,
     snoozedUntil: r.snoozed_until,
     lastSentAt: r.last_sent_at,
     createdAt: r.created_at,
@@ -287,6 +292,18 @@ async function ensureDbColumns(db: D1Database) {
   } catch {}
   try {
     await db.prepare('CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id)').run();
+  } catch {}
+  try {
+    await db.prepare("ALTER TABLE reminders ADD COLUMN channel TEXT NOT NULL DEFAULT 'both'").run();
+  } catch {}
+  try {
+    await db.prepare('ALTER TABLE reminders ADD COLUMN email TEXT').run();
+  } catch {}
+  try {
+    await db.prepare('ALTER TABLE reminders ADD COLUMN email_offset_minutes INTEGER NOT NULL DEFAULT 0').run();
+  } catch {}
+  try {
+    await db.prepare('ALTER TABLE reminders ADD COLUMN email_sent_at TEXT').run();
   } catch {}
   try {
     await db
@@ -602,6 +619,12 @@ app.post('/api/reminders', async (c) => {
   const remindAt = toFutureIso(body.remindAt, 'remindAt');
   const nag = body.nagMode === true || body.nagMode === 1 ? 1 : 0;
   const color = body.badgeColor === undefined ? CATEGORY_COLORS[category] : validColor(body.badgeColor);
+  const channel = body.channel === 'push' || body.channel === 'email' || body.channel === 'both' ? body.channel : 'both';
+  const email = typeof body.email === 'string' && body.email.includes('@') ? body.email.trim() : (identity.user?.email ?? null);
+  const emailOffsetMinutes =
+    typeof body.emailOffsetMinutes === 'number' && body.emailOffsetMinutes >= 0
+      ? Math.min(body.emailOffsetMinutes, 10080)
+      : 0;
 
   const countQuery = identity.user
     ? `SELECT COUNT(*) AS n FROM reminders WHERE (user_id = ?1 OR device_id = ?2) AND status != 'completed'`
@@ -617,10 +640,26 @@ app.post('/api/reminders', async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO reminders
        (id, device_id, user_id, title, notes, category, remind_at_utc, anchor_utc, timezone, repeat_interval,
-        status, nag_mode, badge_color, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, 'pending', ?10, ?11, ?12, ?12)`,
+        status, nag_mode, badge_color, channel, email, email_offset_minutes, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, 'pending', ?10, ?11, ?12, ?13, ?14, ?15, ?15)`,
   )
-    .bind(id, identity.deviceId, identity.user?.id ?? null, title, notes, category, remindAt, timezone, repeat, nag, color, now)
+    .bind(
+      id,
+      identity.deviceId,
+      identity.user?.id ?? null,
+      title,
+      notes,
+      category,
+      remindAt,
+      timezone,
+      repeat,
+      nag,
+      color,
+      channel,
+      email,
+      emailOffsetMinutes,
+      now,
+    )
     .run();
 
   const row = await getOwnedReminder(c.env.DB, id, identity);
@@ -646,6 +685,15 @@ app.patch('/api/reminders/:id', async (c) => {
   if ('timezone' in body) next.timezone = validTimeZone(body.timezone);
   if ('repeatInterval' in body) next.repeat_interval = validRepeat(body.repeatInterval);
   if ('nagMode' in body) next.nag_mode = body.nagMode === true || body.nagMode === 1 ? 1 : 0;
+  if ('channel' in body && (body.channel === 'push' || body.channel === 'email' || body.channel === 'both')) {
+    next.channel = body.channel;
+  }
+  if ('email' in body) {
+    next.email = typeof body.email === 'string' && body.email.includes('@') ? body.email.trim() : null;
+  }
+  if ('emailOffsetMinutes' in body && typeof body.emailOffsetMinutes === 'number') {
+    next.email_offset_minutes = Math.max(0, Math.min(body.emailOffsetMinutes, 10080));
+  }
 
   if ('remindAt' in body) {
     const iso = toFutureIso(body.remindAt, 'remindAt');
@@ -654,6 +702,7 @@ app.patch('/api/reminders/:id', async (c) => {
     next.status = 'pending';
     next.snoozed_until = null;
     next.last_sent_at = null;
+    next.email_sent_at = null;
     next.attempts = 0;
   }
 
@@ -717,8 +766,8 @@ app.patch('/api/reminders/:id', async (c) => {
     `UPDATE reminders SET
        title = ?1, notes = ?2, category = ?3, remind_at_utc = ?4, anchor_utc = ?5, timezone = ?6,
        repeat_interval = ?7, status = ?8, nag_mode = ?9, badge_color = ?10, snoozed_until = ?11,
-       last_sent_at = ?12, attempts = ?13, updated_at = ?14
-     WHERE id = ?15`,
+       last_sent_at = ?12, attempts = ?13, channel = ?14, email = ?15, email_offset_minutes = ?16, updated_at = ?17
+     WHERE id = ?18`,
   )
     .bind(
       next.title,
@@ -734,6 +783,9 @@ app.patch('/api/reminders/:id', async (c) => {
       next.snoozed_until,
       next.last_sent_at,
       next.attempts,
+      next.channel || 'both',
+      next.email || null,
+      next.email_offset_minutes ?? 0,
       new Date(now).toISOString(),
       current.id,
     )
@@ -753,14 +805,52 @@ app.delete('/api/reminders/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-/** Sends this reminder's notification right now. */
+/** Sends this reminder's notification and/or email right now. */
 app.post('/api/reminders/:id/test', async (c) => {
   const identity = await getIdentity(c);
   const reminder = await getOwnedReminder(c.env.DB, c.req.param('id'), identity);
-  const subs = await getSubscriptionsForUserOrDevice(c.env.DB, reminder.user_id, reminder.device_id);
-  if (!subs.length) throw new HttpError(409, 'No push subscription found for this device. Enable notifications first.');
-  const summary = await deliver(c.env, subs, buildReminderPayload(reminder, { test: true }));
-  return c.json({ sent: summary.delivered, failed: summary.results.length - summary.delivered, removed: summary.gone.length });
+
+  let pushSent = 0;
+  const sendPush = reminder.channel !== 'email';
+  if (sendPush) {
+    const subs = await getSubscriptionsForUserOrDevice(c.env.DB, reminder.user_id, reminder.device_id);
+    if (subs.length) {
+      const summary = await deliver(c.env, subs, buildReminderPayload(reminder, { test: true }));
+      pushSent = summary.delivered;
+    }
+  }
+
+  let emailSent = false;
+  let emailError: string | undefined;
+  const sendEmailAlert = reminder.channel === 'email' || reminder.channel === 'both';
+  if (sendEmailAlert) {
+    const targetEmail = reminder.email || identity.user?.email;
+    if (targetEmail) {
+      const { subject, html } = buildReminderEmailHtml(reminder, 'due');
+      const emailRes = await sendEmail(c.env, {
+        to: targetEmail,
+        subject: `🔔 Test: ${subject}`,
+        html,
+      });
+      emailSent = emailRes.ok && !emailRes.mock;
+      if (!emailRes.ok) emailError = emailRes.error;
+    }
+  }
+
+  if (pushSent === 0 && !emailSent) {
+    if (sendEmailAlert && emailError) {
+      throw new HttpError(500, `Email failed: ${emailError}`);
+    }
+    if (sendPush) {
+      throw new HttpError(409, 'No push subscription or email delivered. Check settings.');
+    }
+  }
+
+  return c.json({
+    sent: pushSent + (emailSent ? 1 : 0),
+    pushSent,
+    emailSent,
+  });
 });
 
 // ---------------------------------------------------------------------------

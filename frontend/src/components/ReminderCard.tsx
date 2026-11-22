@@ -4,6 +4,7 @@ import {
   Check,
   Clock,
   Loader2,
+  Mail,
   Pencil,
   Repeat,
   RotateCcw,
@@ -78,6 +79,16 @@ export function ReminderCard({ reminder: r, highlighted, busyAction, onAction, o
             {r.nagMode && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                 <BellRing className="h-3 w-3" /> Nag
+              </span>
+            )}
+            {r.channel === 'email' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded-full border border-sky-200/50 dark:border-sky-800/50">
+                <Mail className="h-3 w-3" /> Email
+              </span>
+            )}
+            {r.channel === 'both' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full border border-indigo-200/50 dark:border-indigo-800/50">
+                <Mail className="h-3 w-3" /> Push & Email
               </span>
             )}
           </div>

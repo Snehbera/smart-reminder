@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS reminders (
                    CHECK (status IN ('pending','sent','snoozed','completed')),
   nag_mode         INTEGER NOT NULL DEFAULT 0 CHECK (nag_mode IN (0,1)),
   badge_color      TEXT NOT NULL DEFAULT '#6366f1',
+  channel          TEXT NOT NULL DEFAULT 'both' CHECK (channel IN ('push','email','both')),
+  email            TEXT,                              -- target email address for email alerts
+  email_offset_minutes INTEGER NOT NULL DEFAULT 0,    -- 0=at time of event, 5=5m before, 15=15m before, etc.
+  email_sent_at    TEXT,                              -- ISO timestamp when email alert was dispatched
   snoozed_until    TEXT,                              -- when status='snoozed': time of the re-alert
   last_sent_at     TEXT,                              -- last successful push; drives the 15-minute nag cadence
   attempts         INTEGER NOT NULL DEFAULT 0,        -- consecutive transient push failures

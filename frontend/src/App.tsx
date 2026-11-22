@@ -268,6 +268,9 @@ export default function App() {
       repeatInterval: input.repeatInterval,
       nagMode: input.nagMode,
       timezone: input.timezone,
+      channel: input.channel,
+      email: input.email,
+      emailOffsetMinutes: input.emailOffsetMinutes,
     };
     if (timeChanged) patch.remindAt = input.remindAt;
     replace(await api.update(reminder.id, patch));
@@ -283,7 +286,15 @@ export default function App() {
         case 'test': {
           const res = await api.testReminder(r.id);
           if (res.sent > 0) {
-            toast('Test alert sent to your device.');
+            const hasEmail = res.emailSent;
+            const hasPush = typeof res.pushSent === 'number' ? res.pushSent > 0 : true;
+            const msg =
+              hasEmail && hasPush
+                ? 'Test alert sent to your device & email.'
+                : hasEmail
+                ? 'Test alert sent to your email.'
+                : 'Test alert sent to your device.';
+            toast(msg);
             void playNotificationSound(r.nagMode || r.category === 'Important' ? 'urgent' : undefined);
           } else toast('Could not deliver test alert.', 'error');
           break;

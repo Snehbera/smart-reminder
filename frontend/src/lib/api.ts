@@ -93,8 +93,10 @@ async function request<T>(path: string, init: RequestInit & { json?: unknown } =
 
 export interface TestResult {
   sent: number;
-  failed: number;
-  removed: number;
+  pushSent?: number;
+  emailSent?: boolean;
+  failed?: number;
+  removed?: number;
 }
 
 export const api = {

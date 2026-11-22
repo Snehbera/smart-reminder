@@ -5,10 +5,13 @@ export interface Env {
   VAPID_SUBJECT: string;
   ALLOWED_ORIGIN?: string;
   EXTRA_PUSH_HOSTS?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
 }
 
 export type RepeatInterval = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type ReminderStatus = 'pending' | 'sent' | 'snoozed' | 'completed';
+export type AlertChannel = 'push' | 'email' | 'both';
 
 export const REPEAT_INTERVALS: RepeatInterval[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
@@ -35,6 +38,10 @@ export interface ReminderRow {
   status: ReminderStatus;
   nag_mode: number;
   badge_color: string;
+  channel?: AlertChannel;
+  email?: string | null;
+  email_offset_minutes?: number;
+  email_sent_at?: string | null;
   snoozed_until: string | null;
   last_sent_at: string | null;
   attempts: number;
