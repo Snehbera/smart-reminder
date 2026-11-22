@@ -20,6 +20,7 @@ import { effectiveAt, formatDateTime } from './lib/time';
 import type { NavPage, Reminder, ReminderInput, User } from './lib/types';
 import { CompletedPage } from './pages/CompletedPage';
 import { CreateReminderPage } from './pages/CreateReminderPage';
+import { LoginPage } from './pages/LoginPage';
 import { OverduePage } from './pages/OverduePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UpcomingPage } from './pages/UpcomingPage';
@@ -42,6 +43,7 @@ export default function App() {
 
   // Auth state
   const [user, setUser] = useState<User | null>(() => getStoredUser());
+  const [authChecked, setAuthChecked] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   // Web push state
@@ -69,7 +71,10 @@ export default function App() {
       .getMe()
       .then((u) => setUser(u))
       .catch(() => {
-        // Not authenticated, fallback to guest
+        setUser(null);
+      })
+      .finally(() => {
+        setAuthChecked(true);
       });
   }, []);
 
@@ -305,6 +310,34 @@ export default function App() {
     setEditingReminder(reminder);
     setActivePage('create');
   };
+
+  // Mandatory Login Gate: user must log in first before accessing reminders
+  if (!user) {
+    if (!authChecked) {
+      return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Loading Smart Reminders...</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <>
+        <LoginPage
+          onSuccess={(u) => {
+            setUser(u);
+            void refresh();
+            toast(`Welcome, ${u.name || u.email}!`);
+          }}
+          theme={theme}
+          onToggleTheme={toggle}
+        />
+        <Toasts toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
