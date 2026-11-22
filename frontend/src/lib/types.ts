@@ -1,6 +1,7 @@
 export type RepeatInterval = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type ReminderStatus = 'pending' | 'sent' | 'snoozed' | 'completed';
 export type CategoryName = 'Personal' | 'Work' | 'Bills' | 'Health' | 'Important';
+export type NavPage = 'upcoming' | 'overdue' | 'completed' | 'create' | 'settings';
 
 export interface User {
   id: string;

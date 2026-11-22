@@ -1,21 +1,10 @@
-import {
-  AlertTriangle,
-  BellRing,
-  CheckCircle2,
-  LogIn,
-  LogOut,
-  Moon,
-  Plus,
-  RefreshCw,
-  Sun,
-  User as UserIcon,
-} from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthModal } from './components/AuthModal';
+import { BottomNav } from './components/BottomNav';
+import { Navbar } from './components/Navbar';
 import { PermissionBanner } from './components/PermissionBanner';
 import type { CardAction } from './components/ReminderCard';
-import { ReminderList, tabOf, type Tab } from './components/ReminderList';
-import { ReminderModal } from './components/ReminderModal';
 import { Toasts, type Toast } from './components/Toasts';
 import { useTheme } from './hooks/useTheme';
 import { ApiError, api, getStoredUser } from './lib/api';
@@ -27,18 +16,27 @@ import {
   subscribeAndSync,
   type PushState,
 } from './lib/push';
-import { formatDateTime } from './lib/time';
-import type { Reminder, ReminderInput, User } from './lib/types';
+import { effectiveAt, formatDateTime } from './lib/time';
+import type { NavPage, Reminder, ReminderInput, User } from './lib/types';
+import { CompletedPage } from './pages/CompletedPage';
+import { CreateReminderPage } from './pages/CreateReminderPage';
+import { OverduePage } from './pages/OverduePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { UpcomingPage } from './pages/UpcomingPage';
 
 const POLL_MS = 60_000;
 
 export default function App() {
   const { theme, toggle } = useTheme();
 
+  // Navigation page state
+  const [activePage, setActivePage] = useState<NavPage>('upcoming');
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+
+  // Reminders state
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('all');
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, CardAction | undefined>>({});
 
@@ -46,17 +44,14 @@ export default function App() {
   const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  // Reminder Modal state
-  const [reminderModalOpen, setReminderModalOpen] = useState(false);
-  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
-
+  // Web push state
   const [pushState, setPushState] = useState<PushState>('loading');
   const [pushBusy, setPushBusy] = useState(false);
 
+  // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
 
-  // ---- toasts -------------------------------------------------------------
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
   const toast = useCallback(
     (message: string, kind: Toast['kind'] = 'success') => {
@@ -68,17 +63,17 @@ export default function App() {
   );
   const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
 
-  // ---- Check current authenticated user on mount ---------------------------
+  // Validate logged-in session on mount
   useEffect(() => {
     api
       .getMe()
       .then((u) => setUser(u))
       .catch(() => {
-        // Not authenticated with valid session, keep guest or null
+        // Not authenticated, fallback to guest
       });
   }, []);
 
-  // ---- data ---------------------------------------------------------------
+  // Fetch reminders
   const refresh = useCallback(async (showError = false) => {
     try {
       setReminders(await api.list());
@@ -96,7 +91,7 @@ export default function App() {
     void refresh(true);
   }, [refresh]);
 
-  // Auto-sync: tab becomes visible again / window focused / network back / every minute while visible.
+  // Auto-sync reminders
   useEffect(() => {
     const sync = () => {
       if (document.visibilityState === 'visible') void refresh();
@@ -113,7 +108,7 @@ export default function App() {
     };
   }, [refresh]);
 
-  // In local development, trigger the cron checker every 10s so due reminders fire immediately
+  // Dev cron ticker
   useEffect(() => {
     const cronTimer = setInterval(() => {
       fetch('/api/cron').catch(() => {});
@@ -121,7 +116,17 @@ export default function App() {
     return () => clearInterval(cronTimer);
   }, []);
 
-  // ---- highlight (?highlight=<id> from a notification click, or a message from the service worker) -------------
+  // Calculate overdue count for badges
+  const overdueCount = useMemo(() => {
+    const now = Date.now();
+    return reminders.filter((r) => {
+      if (r.status === 'completed') return false;
+      if (r.status === 'sent') return true;
+      return effectiveAt(r).getTime() < now;
+    }).length;
+  }, [reminders]);
+
+  // Handle URL highlight
   const focusReminder = useCallback((id: string) => {
     setHighlightId(id);
     setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 5000);
@@ -135,17 +140,7 @@ export default function App() {
     }
   }, [focusReminder]);
 
-  const switchedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!highlightId || switchedFor.current === highlightId) return;
-    const target = reminders.find((r) => r.id === highlightId);
-    if (target) {
-      switchedFor.current = highlightId;
-      setTab(tabOf(target));
-    }
-  }, [highlightId, reminders]);
-
-  // ---- service worker messages ----------------------------------------------
+  // Listen to Service Worker notifications
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const onMessage = (event: MessageEvent) => {
@@ -161,7 +156,7 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [refresh, focusReminder]);
 
-  // ---- push state -----------------------------------------------------------
+  // Push subscription management
   const connect = useCallback(async () => {
     setPushState('connecting');
     try {
@@ -197,12 +192,12 @@ export default function App() {
     };
   }, [connect]);
 
-  const handleEnable = async () => {
+  const handleEnablePush = async () => {
     setPushBusy(true);
     try {
       const permission = await enableNotifications();
       setPushState(permission === 'granted' ? 'active' : permission === 'denied' ? 'denied' : 'default');
-      if (permission === 'granted') toast('Notifications enabled. You will be alerted even when this tab is closed.');
+      if (permission === 'granted') toast('Notifications enabled. Alerts will arrive even when the app is closed.');
     } catch (e) {
       console.error(e);
       setPushState('error');
@@ -212,7 +207,7 @@ export default function App() {
     }
   };
 
-  const handleTest = async () => {
+  const handleTestPush = async () => {
     setPushBusy(true);
     try {
       let result;
@@ -224,8 +219,8 @@ export default function App() {
           result = await api.testPush();
         } else throw e;
       }
-      if (result.sent > 0) toast('Test notification sent — look for the pinned alert.');
-      else toast('The push service did not accept the notification. Try "Retry" or re-enable notifications.', 'error');
+      if (result.sent > 0) toast('Test notification sent — check your device notifications.');
+      else toast('The push service did not accept the notification. Check settings.', 'error');
     } catch (e) {
       toast(errorMessage(e), 'error');
     } finally {
@@ -233,15 +228,16 @@ export default function App() {
     }
   };
 
-  // ---- reminder actions -------------------------------------------------------
-  const handleCreate = async (input: ReminderInput) => {
+  // Reminder CRUD actions
+  const handleCreateReminder = async (input: ReminderInput) => {
     const created = await api.create(input);
     setReminders((list) => [...list, created]);
+    setActivePage('upcoming');
     const when = formatDateTime(new Date(created.remindAt));
     toast(
       pushState === 'active'
-        ? `Reminder set for ${when}.`
-        : `Reminder saved for ${when}. Enable notifications to be alerted.`,
+        ? `Reminder scheduled for ${when}.`
+        : `Reminder saved for ${when}. Enable push notifications in Settings to receive alerts.`,
     );
   };
 
@@ -257,7 +253,9 @@ export default function App() {
     };
     if (timeChanged) patch.remindAt = input.remindAt;
     replace(await api.update(reminder.id, patch));
-    toast('Reminder updated.');
+    setEditingReminder(null);
+    setActivePage('upcoming');
+    toast('Reminder updated successfully.');
   };
 
   const handleAction = async (action: CardAction, r: Reminder) => {
@@ -266,8 +264,8 @@ export default function App() {
       switch (action) {
         case 'test': {
           const res = await api.testReminder(r.id);
-          if (res.sent > 0) toast('Test alert sent — check your notifications.');
-          else toast('The push service did not accept the test alert.', 'error');
+          if (res.sent > 0) toast('Test alert sent to your device.');
+          else toast('Could not deliver test alert.', 'error');
           break;
         }
         case 'snooze':
@@ -276,11 +274,11 @@ export default function App() {
           break;
         case 'done':
           replace(await api.markDone(r));
-          toast(r.repeatInterval === 'none' ? 'Marked as done.' : 'Done — next occurrence is scheduled.');
+          toast(r.repeatInterval === 'none' ? 'Marked as completed.' : 'Done — rolled to next occurrence.');
           break;
         case 'restore':
           replace(await api.reopen(r.id, 10));
-          toast('Restored — it will alert in 10 minutes.');
+          toast('Restored — alerting in 10 minutes.');
           break;
         case 'delete':
           await api.remove(r.id);
@@ -303,199 +301,152 @@ export default function App() {
     void refresh();
   };
 
-  // ---- render ---------------------------------------------------------------
+  const handleStartEdit = (reminder: Reminder) => {
+    setEditingReminder(reminder);
+    setActivePage('create');
+  };
+
   return (
-    <div className="mx-auto min-h-screen max-w-4xl space-y-5 px-3 sm:px-6 pb-28 pt-4 sm:pt-8">
-      {/* Top Navigation Bar */}
-      <header className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800/80">
-        <div className="flex items-center justify-between sm:justify-start gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/20">
-              <BellRing className="h-5 w-5 sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <h1 className="text-lg sm:text-xl font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-                Smart Reminders
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Persistent push alerts across your devices
-              </p>
-            </div>
-          </div>
-
-          {/* Mobile Theme Toggle */}
-          <div className="flex sm:hidden items-center gap-1.5">
-            <button
-              onClick={toggle}
-              className="btn-ghost h-9 w-9 !p-0"
-              aria-label="Toggle theme"
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Header Right Actions */}
-        <div className="flex items-center justify-end gap-2 flex-wrap sm:flex-nowrap">
-          {/* User Account / Profile */}
-          {user ? (
-            <div className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 p-1 pl-2.5 text-xs">
-              <div className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px] sm:max-w-[200px]">
-                <UserIcon className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                <span className="truncate">{user.name || user.email}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="btn-ghost !p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400"
-                title="Log out"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setAuthModalOpen(true)}
-              className="btn-secondary !py-2 !px-3 text-xs flex items-center gap-1.5 font-semibold"
-            >
-              <LogIn className="h-3.5 w-3.5 text-indigo-500" />
-              <span>Sign In / Register</span>
-            </button>
-          )}
-
-          {/* Desktop Theme Toggle */}
-          <button
-            onClick={toggle}
-            className="btn-ghost hidden sm:flex h-9 w-9 !p-0"
-            aria-label={theme === 'dark' ? 'Light theme' : 'Dark theme'}
-          >
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
-
-          {/* Primary "+ Add Reminder" Button */}
-          <button
-            onClick={() => {
-              setEditingReminder(null);
-              setReminderModalOpen(true);
-            }}
-            className="btn-primary !py-2 !px-3.5 text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/20"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            <span>Add Reminder</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Web Push Permission Banner */}
-      <PermissionBanner
-        state={pushState}
-        busy={pushBusy}
-        onEnable={handleEnable}
-        onRetry={() => {
-          setPushBusy(true);
-          void connect().finally(() => setPushBusy(false));
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+      {/* Top Navbar */}
+      <Navbar
+        activePage={activePage}
+        onNavigate={(page) => {
+          if (page !== 'create') setEditingReminder(null);
+          setActivePage(page);
         }}
-        onTest={handleTest}
+        overdueCount={overdueCount}
+        user={user}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        theme={theme}
+        onToggleTheme={toggle}
       />
 
-      {/* Error state alert */}
-      {loadError && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
-        >
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" /> {loadError}
-          </span>
-          <button className="btn-ghost shrink-0" onClick={() => void refresh(true)}>
-            <RefreshCw className="h-4 w-4" /> Retry
-          </button>
-        </div>
-      )}
-
-      {/* Main Reminders View with Separated Sections & Frequency Filters */}
-      <ReminderList
-        reminders={reminders}
-        loading={loading}
-        tab={tab}
-        onTabChange={setTab}
-        highlightId={highlightId}
-        busy={busy}
-        onAction={handleAction}
-        onSaveEdit={handleSaveEdit}
-        onOpenAddModal={() => {
-          setEditingReminder(null);
-          setReminderModalOpen(true);
-        }}
-        onEditInModal={(r) => {
-          setEditingReminder(r);
-          setReminderModalOpen(true);
-        }}
-      />
-
-      {/* Footer */}
-      <footer className="pt-6 text-center text-xs text-slate-400 dark:text-slate-500 space-y-1">
-        {user ? (
-          <p className="flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-            Reminders and alerts are synced to your account ({user.email}).
-          </p>
-        ) : (
-          <p>
-            Reminders are saved to this browser.
-            <button
-              onClick={() => setAuthModalOpen(true)}
-              className="ml-1 text-indigo-600 hover:underline dark:text-indigo-400 font-medium"
-            >
-              Sign in or create an account
-            </button>{' '}
-            to sync across multiple devices.
-          </p>
+      {/* Main Container */}
+      <main className="mx-auto max-w-4xl px-3 sm:px-6 pt-4 pb-24 sm:pb-12">
+        {/* Banner if notifications not enabled */}
+        {pushState !== 'active' && activePage !== 'settings' && (
+          <div className="mb-4">
+            <PermissionBanner
+              state={pushState}
+              busy={pushBusy}
+              onEnable={handleEnablePush}
+              onRetry={() => {
+                setPushBusy(true);
+                void connect().finally(() => setPushBusy(false));
+              }}
+              onTest={handleTestPush}
+            />
+          </div>
         )}
-      </footer>
 
-      {/* Mobile Floating Action Button (FAB) */}
-      <div className="fixed bottom-6 right-5 sm:hidden z-30">
-        <button
-          onClick={() => {
-            setEditingReminder(null);
-            setReminderModalOpen(true);
-          }}
-          className="flex items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-600/30 active:scale-95 transition"
-        >
-          <Plus className="h-5 w-5" />
-          <span>New Reminder</span>
-        </button>
-      </div>
+        {/* Global Load Error */}
+        {loadError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+          >
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> {loadError}
+            </span>
+            <button className="btn-ghost shrink-0" onClick={() => void refresh(true)}>
+              <RefreshCw className="h-4 w-4" /> Retry
+            </button>
+          </div>
+        )}
 
-      {/* Add / Edit Reminder Modal */}
-      <ReminderModal
-        isOpen={reminderModalOpen}
-        initial={editingReminder || undefined}
-        onClose={() => {
-          setReminderModalOpen(false);
-          setEditingReminder(null);
+        {/* Page Routing */}
+        {activePage === 'upcoming' && (
+          <UpcomingPage
+            reminders={reminders}
+            loading={loading}
+            highlightId={highlightId}
+            busy={busy}
+            onAction={handleAction}
+            onEdit={handleStartEdit}
+            onNavigateCreate={() => {
+              setEditingReminder(null);
+              setActivePage('create');
+            }}
+          />
+        )}
+
+        {activePage === 'overdue' && (
+          <OverduePage
+            reminders={reminders}
+            highlightId={highlightId}
+            busy={busy}
+            onAction={handleAction}
+            onEdit={handleStartEdit}
+          />
+        )}
+
+        {activePage === 'completed' && (
+          <CompletedPage
+            reminders={reminders}
+            highlightId={highlightId}
+            busy={busy}
+            onAction={handleAction}
+            onEdit={handleStartEdit}
+          />
+        )}
+
+        {activePage === 'create' && (
+          <CreateReminderPage
+            initial={editingReminder}
+            onSubmit={async (input, timeChanged) => {
+              if (editingReminder) {
+                await handleSaveEdit(editingReminder, input, timeChanged);
+              } else {
+                await handleCreateReminder(input);
+              }
+            }}
+            onCancel={() => {
+              setEditingReminder(null);
+              setActivePage('upcoming');
+            }}
+          />
+        )}
+
+        {activePage === 'settings' && (
+          <SettingsPage
+            user={user}
+            onOpenAuth={() => setAuthModalOpen(true)}
+            onLogout={handleLogout}
+            pushState={pushState}
+            pushBusy={pushBusy}
+            onEnablePush={handleEnablePush}
+            onTestPush={handleTestPush}
+            theme={theme}
+            onToggleTheme={toggle}
+            totalReminders={reminders.length}
+          />
+        )}
+      </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNav
+        activePage={activePage}
+        onNavigate={(page) => {
+          if (page !== 'create') setEditingReminder(null);
+          setActivePage(page);
         }}
-        onSubmit={async (input, timeChanged) => {
-          if (editingReminder) {
-            await handleSaveEdit(editingReminder, input, timeChanged);
-          } else {
-            await handleCreate(input);
-          }
-        }}
+        overdueCount={overdueCount}
+        user={user}
       />
 
-      {/* Login & Registration Modal */}
+      {/* Auth Modal */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onSuccess={(u) => {
           setUser(u);
           void refresh();
-          toast(`Welcome back, ${u.name || u.email}! Your reminders are now synced.`);
+          toast(`Signed in as ${u.name || u.email}. Reminders are now synced across devices!`);
         }}
       />
 
-      {/* Floating notification toasts */}
+      {/* Toast Notifications */}
       <Toasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
