@@ -17,6 +17,7 @@ const truncate = (s: string, max: number) => (s.length > max ? s.slice(0, max - 
 export function buildReminderPayload(r: ReminderRow, opts: { test?: boolean } = {}): PushPayload {
   const test = opts.test === true;
   const notes = (r.notes ?? '').trim();
+  const sound = r.nag_mode === 1 || r.category === 'Important' ? 'urgent' : 'chime';
   return {
     v: 1,
     id: r.id,
@@ -30,6 +31,7 @@ export function buildReminderPayload(r: ReminderRow, opts: { test?: boolean } = 
     test,
     nag: r.nag_mode === 1,
     repeat: r.repeat_interval,
+    sound,
   };
 }
 
@@ -47,6 +49,7 @@ export function buildGenericTestPayload(): PushPayload {
     test: true,
     nag: false,
     repeat: 'none',
+    sound: 'chime',
   };
 }
 

@@ -87,4 +87,5 @@ export interface PushPayload {
   test: boolean;
   nag: boolean;
   repeat: RepeatInterval;
+  sound?: string;
 }

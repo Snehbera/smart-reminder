@@ -1,20 +1,36 @@
 import {
   Bell,
+  BellRing,
+  Check,
   CheckCircle2,
   Copy,
   Laptop,
   LogIn,
   LogOut,
   Moon,
+  Play,
   Send,
   ShieldCheck,
   Smartphone,
   Sun,
   User as UserIcon,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useState } from 'react';
 import { getDeviceId } from '../lib/api';
 import type { PushState } from '../lib/push';
+import {
+  SOUND_OPTIONS,
+  getSoundPreference,
+  getSoundVolume,
+  isSoundEnabled,
+  playNotificationSound,
+  setSoundEnabled,
+  setSoundPreference,
+  setSoundVolume,
+  type SoundType,
+} from '../lib/sound';
 import type { User } from '../lib/types';
 
 interface Props {
@@ -44,6 +60,42 @@ export function SettingsPage({
 }: Props) {
   const [copied, setCopied] = useState(false);
   const deviceId = getDeviceId();
+
+  const [soundEnabled, setSoundEnabledState] = useState(() => isSoundEnabled());
+  const [selectedSound, setSelectedSoundState] = useState<SoundType>(() => getSoundPreference());
+  const [volume, setVolumeState] = useState(() => Math.round(getSoundVolume() * 100));
+  const [previewingSound, setPreviewingSound] = useState<SoundType | null>(null);
+
+  const handleToggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabledState(next);
+    setSoundEnabled(next);
+    if (next) {
+      void playNotificationSound(selectedSound, volume / 100);
+    }
+  };
+
+  const handleSelectSound = (sound: SoundType) => {
+    setSelectedSoundState(sound);
+    setSoundPreference(sound);
+    if (sound !== 'none' && soundEnabled) {
+      setPreviewingSound(sound);
+      void playNotificationSound(sound, volume / 100);
+      setTimeout(() => setPreviewingSound(null), 800);
+    }
+  };
+
+  const handleVolumeChange = (newVal: number) => {
+    setVolumeState(newVal);
+    setSoundVolume(newVal / 100);
+  };
+
+  const handlePreview = (e: React.MouseEvent, sound: SoundType) => {
+    e.stopPropagation();
+    setPreviewingSound(sound);
+    void playNotificationSound(sound, volume / 100);
+    setTimeout(() => setPreviewingSound(null), 800);
+  };
 
   const handleCopyDevice = () => {
     navigator.clipboard.writeText(deviceId);
@@ -170,6 +222,130 @@ export function SettingsPage({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Notification Sound Section */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BellRing className="h-4 w-4 text-indigo-500" />
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Notification Sounds & Chimes
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleSound}
+            role="switch"
+            aria-checked={soundEnabled}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+              soundEnabled ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                soundEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Play a specific audible chime when reminders trigger or alerts arrive.
+        </p>
+
+        {soundEnabled ? (
+          <div className="space-y-4 pt-1">
+            {/* Volume control */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+              {volume === 0 ? (
+                <VolumeX className="h-4 w-4 text-slate-400 shrink-0" />
+              ) : (
+                <Volume2 className="h-4 w-4 text-indigo-500 shrink-0" />
+              )}
+              <div className="flex-1">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">Volume</span>
+                  <span className="text-slate-500 font-mono text-[11px]">{volume}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={volume}
+                  onChange={(e) => handleVolumeChange(parseInt(e.target.value, 10))}
+                  className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+              </div>
+            </div>
+
+            {/* Sound Tones Selector */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                Choose Alert Chime
+              </span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {SOUND_OPTIONS.filter((s) => s.id !== 'none').map((opt) => {
+                  const isSelected = selectedSound === opt.id;
+                  const isPlaying = previewingSound === opt.id;
+                  return (
+                    <div
+                      key={opt.id}
+                      onClick={() => handleSelectSound(opt.id)}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-2.5 ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 ring-1 ring-indigo-500/30'
+                          : 'border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-xs font-semibold ${
+                              isSelected
+                                ? 'text-indigo-600 dark:text-indigo-400'
+                                : 'text-slate-900 dark:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </span>
+                          {isSelected && (
+                            <Check className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {opt.description}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => handlePreview(e, opt.id)}
+                        title={`Preview ${opt.label}`}
+                        className={`p-1.5 rounded-lg text-xs font-medium transition shrink-0 flex items-center gap-1 ${
+                          isPlaying
+                            ? 'bg-indigo-600 text-white animate-pulse'
+                            : isSelected
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 hover:bg-indigo-200'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Play className="h-3 w-3" />
+                        <span className="text-[10px] hidden sm:inline">Play</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+            <VolumeX className="h-4 w-4 shrink-0 text-slate-400" />
+            <span>Sound alerts are turned off. Notifications will arrive silently.</span>
+          </div>
+        )}
       </div>
 
       {/* Appearance & Preferences */}

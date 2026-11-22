@@ -16,6 +16,11 @@ import {
   subscribeAndSync,
   type PushState,
 } from './lib/push';
+import {
+  initAudioUnlock,
+  playNotificationSound,
+  type SoundType,
+} from './lib/sound';
 import { effectiveAt, formatDateTime } from './lib/time';
 import type { NavPage, Reminder, ReminderInput, User } from './lib/types';
 import { CompletedPage } from './pages/CompletedPage';
@@ -113,8 +118,9 @@ export default function App() {
     };
   }, [refresh]);
 
-  // Dev cron ticker
+  // Dev cron ticker & audio unlock
   useEffect(() => {
+    initAudioUnlock();
     const cronTimer = setInterval(() => {
       fetch('/api/cron').catch(() => {});
     }, 10_000);
@@ -149,9 +155,14 @@ export default function App() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const onMessage = (event: MessageEvent) => {
-      const msg = event.data as { type?: string; id?: string } | undefined;
+      const msg = event.data as { type?: string; id?: string; sound?: string } | undefined;
       if (!msg?.type) return;
-      if (msg.type === 'push-received' || msg.type === 'reminders-changed') void refresh();
+      if (msg.type === 'push-received' || msg.type === 'reminders-changed') {
+        void refresh();
+        if (msg.type === 'push-received') {
+          void playNotificationSound((msg.sound as SoundType) || undefined);
+        }
+      }
       if (msg.type === 'highlight' && msg.id) {
         void refresh();
         focusReminder(msg.id);
@@ -224,8 +235,10 @@ export default function App() {
           result = await api.testPush();
         } else throw e;
       }
-      if (result.sent > 0) toast('Test notification sent — check your device notifications.');
-      else toast('The push service did not accept the notification. Check settings.', 'error');
+      if (result.sent > 0) {
+        toast('Test notification sent — check your device notifications.');
+        void playNotificationSound();
+      } else toast('The push service did not accept the notification. Check settings.', 'error');
     } catch (e) {
       toast(errorMessage(e), 'error');
     } finally {
@@ -269,8 +282,10 @@ export default function App() {
       switch (action) {
         case 'test': {
           const res = await api.testReminder(r.id);
-          if (res.sent > 0) toast('Test alert sent to your device.');
-          else toast('Could not deliver test alert.', 'error');
+          if (res.sent > 0) {
+            toast('Test alert sent to your device.');
+            void playNotificationSound(r.nagMode || r.category === 'Important' ? 'urgent' : undefined);
+          } else toast('Could not deliver test alert.', 'error');
           break;
         }
         case 'snooze':

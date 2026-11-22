@@ -82,6 +82,7 @@ self.addEventListener('push', (event) => {
     renotify: true,
     requireInteraction: true, // stays on screen (desktop) until the user acts on it
     vibrate: [300, 100, 300, 100, 300],
+    sound: '/notification.wav',
     timestamp: data.timestamp || Date.now(),
     actions: [
       { action: 'mark_done', title: '✓ Mark Done' },
@@ -92,6 +93,7 @@ self.addEventListener('push', (event) => {
       url: data.url || '/?highlight=' + encodeURIComponent(reminderId),
       remindAt: data.remindAt || null,
       test: data.test === true,
+      sound: data.sound || 'chime',
     },
   };
   if (data.image) options.image = data.image;
@@ -99,7 +101,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     Promise.all([
       self.registration.showNotification(title, options),
-      broadcast({ type: 'push-received', id: reminderId }), // lets an open tab refresh its list immediately
+      broadcast({ type: 'push-received', id: reminderId, sound: data.sound || 'chime' }), // lets an open tab refresh its list and play sound immediately
     ]),
   );
 });
